@@ -29,6 +29,9 @@ def train(args):
     print('Stage: Loading MNIST dataset...')
     train_loader, test_loader = get_dataloaders(args.batch_size)
 
+    # save outputs (models/plots/csv) to a `model` folder next to this train.py file
+    base_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'model')
+
     layer_sizes = getattr(args, 'layers', [784, 500, 200, 50])
     print(f'Stage: Initializing DBN with layer sizes: {layer_sizes}')
     dbn = DBN(layer_sizes)
@@ -50,6 +53,8 @@ def train(args):
     optimizer = optim.Adam(dbn.classifier.parameters(), lr=args.lr)
     print('Stage: Fine-tuning classifier...')
     accuracies = []
+    # track per-class accuracy history (10 classes)
+    per_class_history = [[] for _ in range(10)]
     for epoch in range(args.epochs):
         dbn.train()
         total_loss = 0.0
@@ -65,29 +70,86 @@ def train(args):
             total_loss += loss.item()
             n += 1
         print(f"Stage: Fine-tune epoch {epoch+1}/{args.epochs} loss={total_loss/n:.6f}")
-        acc = test(dbn, test_loader, device)
+        acc, per_class = test(dbn, test_loader, device)
         accuracies.append(acc)
+        # append per-class accuracies (percent) to history
+        for i in range(len(per_class_history)):
+            per_class_history[i].append(per_class[i] if i < len(per_class) else 0.0)
 
-    os.makedirs('models', exist_ok=True)
-    dbn.save('models/dbn_mnist.pth')
-    print('Model saved to models/dbn_mnist.pth')
+    os.makedirs(base_dir, exist_ok=True)
+    try:
+        model_path = os.path.join(base_dir, 'dbn_mnist.pth')
+        dbn.save(model_path)
+        abs_model_path = os.path.abspath(model_path)
+        if os.path.exists(model_path):
+            print(f'Model saved to {abs_model_path}')
+        else:
+            print(f'Warning: attempted to save model but file not found at {abs_model_path}')
+    except Exception as e:
+        print('Failed to save model:', e)
 
     # 绘制并保存准确率-轮次图
     try:
-        os.makedirs('models', exist_ok=True)
+        os.makedirs(base_dir, exist_ok=True)
         epochs = list(range(1, len(accuracies)+1))
         plt.figure()
-        plt.plot(epochs, accuracies, marker='o')
+        # plot without markers to avoid clutter when many epochs
+        plt.plot(epochs, accuracies, linewidth=1.5)
         plt.title('Test Accuracy per Epoch')
         plt.xlabel('Epoch')
         plt.ylabel('Accuracy (%)')
         plt.grid(True)
         timestamp = datetime.datetime.now().strftime('%Y%m%d_%H%M%S')
-        out_path = os.path.join('models', f'accuracy_{timestamp}.png')
+        out_path = os.path.join(base_dir, f'accuracy_{timestamp}.png')
         plt.savefig(out_path)
-        print(f'Accuracy plot saved to {out_path}')
+        plt.close()
+        abs_out_path = os.path.abspath(out_path)
+        if os.path.exists(out_path):
+            print(f'Accuracy plot saved to {abs_out_path}')
+        else:
+            print(f'Warning: accuracy plot not found after save at {abs_out_path}')
     except Exception as e:
         print('Failed to save accuracy plot:', e)
+
+    # 绘制并保存每类准确率变化曲线（不同颜色、无标点）
+    try:
+        epochs = list(range(1, len(accuracies)+1))
+        plt.figure(figsize=(8, 5))
+        cmap = plt.get_cmap('tab10')
+        for i in range(len(per_class_history)):
+            color = cmap(i % 10)
+            plt.plot(epochs, per_class_history[i], color=color, linewidth=1.5, label=str(i))
+        plt.title('Per-class Accuracy per Epoch')
+        plt.xlabel('Epoch')
+        plt.ylabel('Accuracy (%)')
+        plt.grid(True)
+        plt.legend(title='Class', bbox_to_anchor=(1.02, 1), loc='upper left')
+        timestamp2 = datetime.datetime.now().strftime('%Y%m%d_%H%M%S')
+        out_path2 = os.path.join(base_dir, f'per_class_accuracy_{timestamp2}.png')
+        plt.tight_layout()
+        plt.savefig(out_path2)
+        plt.close()
+        abs_out_path2 = os.path.abspath(out_path2)
+        if os.path.exists(out_path2):
+            print(f'Per-class accuracy plot saved to {abs_out_path2}')
+        else:
+            print(f'Warning: per-class accuracy plot not found after save at {abs_out_path2}')
+        # also save per-class history as CSV for easier debugging
+        try:
+            import csv
+            csv_path = os.path.join(base_dir, f'per_class_history_{timestamp2}.csv')
+            with open(csv_path, 'w', newline='') as f:
+                writer = csv.writer(f)
+                header = ['epoch'] + [f'class_{i}' for i in range(10)]
+                writer.writerow(header)
+                for ei, e in enumerate(epochs, start=1):
+                    row = [ei] + [per_class_history[i][ei-1] if ei-1 < len(per_class_history[i]) else '' for i in range(10)]
+                    writer.writerow(row)
+            print(f'Per-class history CSV saved to {os.path.abspath(csv_path)}')
+        except Exception as e:
+            print('Failed to save per-class history CSV:', e)
+    except Exception as e:
+        print('Failed to save per-class accuracy plot:', e)
 
 def test(model, test_loader, device):
     model.eval()
@@ -130,7 +192,7 @@ def test(model, test_loader, device):
     for cnt, t, p in flat[:10]:
         print(f'  {t} -> {p}: {cnt}')
 
-    return acc
+    return acc, per_class
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser()

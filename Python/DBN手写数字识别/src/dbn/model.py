@@ -21,7 +21,7 @@ class DBN(nn.Module):
     def forward(self, x):
         return self.classifier(x)
 
-    def pretrain(self, train_loader, epochs=1, lr=1e-3, device='cpu'):
+    def pretrain(self, train_loader, epochs=1, lr=1e-3, device=torch.device('cpu')):
         # unsupervised layer-wise training
         data = None
         for idx, rbm in enumerate(self.rbms):
