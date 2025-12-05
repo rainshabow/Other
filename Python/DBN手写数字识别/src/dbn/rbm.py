@@ -30,7 +30,7 @@ class RBM(nn.Module):
             prob_v, v = self.sample_v(h0)
             prob_h, h = self.sample_h(v)
 
-        # update rules (CD-1/ k)
+        # 更新规则（对比散度 CD-k）
         positive = torch.matmul(prob_h0.t(), v0)
         negative = torch.matmul(prob_h.t(), v)
 
@@ -43,6 +43,6 @@ class RBM(nn.Module):
         self.v_bias.data += lr * dvb
         self.h_bias.data += lr * dhb
 
-        # reconstruction error
+        # 重构误差（用于监控训练质量）
         loss = torch.mean((v0 - v) ** 2)
         return loss.item()
